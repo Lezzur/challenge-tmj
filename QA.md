@@ -1,25 +1,21 @@
-# QA — Quiet Tutor Finder
+# QA — independent review (L Lawliet)
 
-I didn't take the script's word for it. I ran it from a clean output directory and re-derived the answer from the raw CSVs by hand before trusting a single number.
+**Verdict: PASS.** I ran it clean and checked the numbers against the raw data myself. It holds up.
 
-## What I checked
+What I confirmed:
 
-**Nothing got lost.** Every one of the 135 session rows is accounted for: 132 matched to a tutor, 3 sent to the review list, 0 unparseable dates. That's the check that actually matters — if rows silently vanish, a tutor goes quiet and nobody knows. They don't here.
+Nothing falls through the cracks. All 135 sessions are accounted for — 132 matched to a tutor, 3 sent to review, none with broken dates. That's the check that actually matters: if rows quietly vanish, a tutor goes silent and you never find out. Doesn't happen here.
 
-**The two traps in the data both resolve correctly — and the right way.**
-- `J. Smith` (Physics) → John Smith. His last real session is 27 May, so he stays active. Miss that match and he looks 37 days quiet — a false alarm.
-- `Sarah L.` (Biology) → Sarah Leung, last session 28 May, active. Miss it and she reads 44 days quiet. Also false.
+The two tricky names both land right, and they land in the way that keeps the tutor *off* the quiet list:
+- "J. Smith" on a Physics session is John Smith — last taught 27 May, so he's active. Miss that and he'd look 37 days quiet for no reason.
+- "Sarah L." on Biology is Sarah Leung — last taught 28 May, active. Same deal: miss it and she's a false 44-day alarm.
 
-Both were rescued by using the session subject to break the tie between same-surname tutors. That's the difference between a list I'd trust and one I wouldn't.
+Both got sorted out by using the subject to tell the similar names apart. That's the difference between a list I'd act on and one I wouldn't.
 
-**`Kevin Tran` is correctly NOT guessed onto Mei Tan.** He's not on the roster, so he goes to the human-review list instead of getting force-matched to a lookalike. I checked why: the name similarity falls below the cutoff *and* the first names don't match — two independent reasons, not luck.
+Kevin Tran does NOT get jammed onto "Mei Tan" just because they look alike. He's not on the roster, so he goes to review instead of a wrong guess. I checked why — the names aren't close enough *and* the first names don't match, so it fails two separate ways.
 
-**The five quiet tutors and their day counts recompute exactly:** Hannah Cohen 56d, Aarav Sharma 49d, Aisha Rahman 42d, Mei Tan 35d, Priya Nair 31d. All genuinely past three weeks, sorted longest-quiet first.
+The five quiet tutors all check out, day counts and all — Hannah 56, Aarav 49, Aisha 42, Mei 35, Priya 31, longest first.
 
-## One note worth surfacing
+One thing to watch, not a problem today: the Kevin Tran / Mei Tan call is close. It's the first-name check carrying it, not the surname. So if next week's file has a typo or an abbreviation that lands near a real name, that's the first place it could wobble. Tony already flagged name drift as the top weekly risk — this is just the concrete example.
 
-The Tran/Tan rejection clears the bar by a thin margin. It's the first-name check doing most of the work, not the surname similarity. So if a future weekly run sees a near-collision — a typo'd surname, or an abbreviation like `M. Tan` — it could wobble. Not a bug today; the answer is correct. But it's the spot I'd watch first when this runs on next week's data, and it's exactly why the review list exists.
-
-## Verdict
-
-**PASS.** Results are correct, and when the data is ambiguous the script does the safe thing — it hands the call to a person instead of guessing. That's the behavior I want.
+Ship it. Results are right, and when it's not sure, it asks a human instead of guessing.
