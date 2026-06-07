@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TMJ — Quiet Tutor Report</title>
+<style>
+  :root {
+    --bg:#0f1115; --panel:#171a21; --line:#272b35; --txt:#e7e9ee; --mut:#9aa3b2;
+    --accent:#5b8cff; --green:#3fb950; --amber:#d29922; --red:#f85149;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:28px 22px 60px; }
+  header h1 { margin:0 0 4px; font-size:22px; letter-spacing:.2px; }
+  header .meta { color:var(--mut); font-size:13px; }
+  header .meta code { color:var(--txt); }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:22px 0 6px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .card .n { font-size:28px; font-weight:700; }
+  .card .l { color:var(--mut); font-size:12px; text-transform:uppercase; letter-spacing:.6px; }
+  .card.quiet .n { color:var(--red); }
+  .card.active .n { color:var(--green); }
+  .card.review .n { color:var(--amber); }
+  h2 { margin:30px 0 4px; font-size:17px; }
+  .sub { color:var(--mut); font-size:13px; margin:0 0 12px; }
+  .sub.warn { color:var(--amber); }
+  table { width:100%; border-collapse:collapse; background:var(--panel);
+           border:1px solid var(--line); border-radius:10px; overflow:hidden; font-size:14px; }
+  th,td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:#1b1f27; color:var(--mut); font-weight:600; font-size:12px;
+        text-transform:uppercase; letter-spacing:.5px; }
+  tr:last-child td { border-bottom:none; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  td.name { font-weight:600; }
+  td.reason { color:var(--mut); font-size:12.5px; }
+  code { background:#0c0e12; border:1px solid var(--line); border-radius:5px;
+          padding:1px 6px; font-size:12.5px; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:600; }
+  .conf-high { background:rgba(63,185,80,.15); color:#56d364; }
+  .conf-med { background:rgba(91,140,255,.15); color:#79a0ff; }
+  .conf-review { background:rgba(210,153,34,.18); color:#e3b341; }
+  .conf-none { background:#222; color:var(--mut); }
+  .sev { padding:2px 9px; border-radius:999px; font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .sev-high { background:rgba(248,81,73,.16); color:#ff7b72; }
+  .sev-mid { background:rgba(210,153,34,.16); color:#e3b341; }
+  .sev-low { background:rgba(91,140,255,.14); color:#79a0ff; }
+  .sev-never { background:#222; color:var(--mut); }
+  .count-pill { background:#222; color:var(--mut); border-radius:999px; padding:1px 9px;
+                 font-size:12px; font-weight:600; vertical-align:middle; }
+  .count-pill.ok { background:rgba(63,185,80,.15); color:#56d364; }
+  details { margin-top:8px; }
+  summary { cursor:pointer; color:var(--accent); font-size:14px; }
+  .legend { color:var(--mut); font-size:12.5px; margin:10px 0 0; }
+  footer { color:var(--mut); font-size:12px; margin-top:34px; border-top:1px solid var(--line); padding-top:14px; }
+</style></head>
+<body><div class="wrap">
+  <header>
+    <h1>TMJ Tutoring — Quiet Tutor Check-in</h1>
+    <div class="meta">
+      Today: <code>Friday 29 May 2026</code> ·
+      Quiet threshold: <code>≥ 21 days</code> ·
+      Generated: <code>2026-06-07 05:30</code><br>
+      Sources: <code>sessions.csv</code> + <code>tutors.csv</code>
+    </div>
+  </header>
+
+  <div class="cards">
+    <div class="card"><div class="n">15</div><div class="l">Tutors on roster</div></div>
+    <div class="card active"><div class="n">10</div><div class="l">Active</div></div>
+    <div class="card quiet"><div class="n">5</div><div class="l">Quiet (need check-in)</div></div>
+    <div class="card review"><div class="n">1</div><div class="l">Names need a human</div></div>
+  </div>
+  <p class="legend">Rows processed: 135 &nbsp;=&nbsp; 132 matched + 3 review + 0 bad dates &nbsp;(conservation check: no silent drops).</p>
+
+  <h2>Quiet tutors <span class="count-pill">5</span></h2>
+  <p class="sub">No session in 21+ days, worst first. Every tutor carries their <code>tutor_id</code>.</p>
+  <table>
+    <thead><tr>
+      <th>#</th><th>ID</th><th>Name</th><th>Subject</th><th>Last seen</th>
+      <th>Quiet for</th><th>Sessions</th><th>Confidence</th><th>Phone</th><th>Email</th>
+    </tr></thead>
+    <tbody>
+        <tr>
+          <td class="num">1</td>
+          <td><code>T015</code></td>
+          <td class="name">Hannah Cohen</td>
+          <td>Biology</td>
+          <td>2026-04-03</td>
+          <td><span class="sev sev-high">56 days</span></td>
+          <td class="num">12</td>
+          <td><span class="badge conf-high">High</span></td>
+          <td><a href="tel:+61 419 553 802">+61 419 553 802</a></td>
+          <td><a href="mailto:hannah.cohen@gmail.com">hannah.cohen@gmail.com</a></td>
+        </tr>
+        <tr>
+          <td class="num">2</td>
+          <td><code>T001</code></td>
+          <td class="name">Aarav Sharma</td>
+          <td>Maths</td>
+          <td>2026-04-10</td>
+          <td><span class="sev sev-high">49 days</span></td>
+          <td class="num">18</td>
+          <td><span class="badge conf-high">High</span></td>
+          <td><a href="tel:+61 412 003 118">+61 412 003 118</a></td>
+          <td><a href="mailto:aarav.sharma@gmail.com">aarav.sharma@gmail.com</a></td>
+        </tr>
+        <tr>
+          <td class="num">3</td>
+          <td><code>T012</code></td>
+          <td class="name">Aisha Rahman</td>
+          <td>English</td>
+          <td>2026-04-17</td>
+          <td><span class="sev sev-high">42 days</span></td>
+          <td class="num">6</td>
+          <td><span class="badge conf-high">High</span></td>
+          <td><a href="tel:+61 423 615 708">+61 423 615 708</a></td>
+          <td><a href="mailto:aisha.rahman@gmail.com">aisha.rahman@gmail.com</a></td>
+        </tr>
+        <tr>
+          <td class="num">4</td>
+          <td><code>T006</code></td>
+          <td class="name">Mei Tan</td>
+          <td>Maths</td>
+          <td>2026-04-24</td>
+          <td><span class="sev sev-mid">35 days</span></td>
+          <td class="num">8</td>
+          <td><span class="badge conf-high">High</span></td>
+          <td><a href="tel:+61 431 660 942">+61 431 660 942</a></td>
+          <td><a href="mailto:mei.tan@gmail.com">mei.tan@gmail.com</a></td>
+        </tr>
+        <tr>
+          <td class="num">5</td>
+          <td><code>T008</code></td>
+          <td class="name">Priya Nair</td>
+          <td>Physics</td>
+          <td>2026-04-28</td>
+          <td><span class="sev sev-mid">31 days</span></td>
+          <td class="num">2</td>
+          <td><span class="badge conf-high">High</span></td>
+          <td><a href="tel:+61 415 002 776">+61 415 002 776</a></td>
+          <td><a href="mailto:priya.nair@gmail.com">priya.nair@gmail.com</a></td>
+        </tr></tbody>
+  </table>
+  <p class="legend">
+    Confidence: <span class="badge conf-high">High</span> exact name match &nbsp;
+    <span class="badge conf-med">Medium</span> matched by name shape &nbsp;
+    <span class="badge conf-review">Review</span> ambiguous, resolved via subject.
+  </p>
+
+  
+      <h2>⚠ Needs a human <span class="count-pill">1</span></h2>
+      <p class="sub">Session names that could not be confidently tied to a <code>tutor_id</code>.
+         Surfaced on purpose — not in the quiet list, not silently dropped.</p>
+      <table>
+        <thead><tr><th>Name in log</th><th>Sessions</th><th>Subject(s)</th><th>Why not matched</th></tr></thead>
+        <tbody>
+        <tr>
+          <td class="name">Kevin Tran</td>
+          <td class="num">3</td>
+          <td>Maths</td>
+          <td class="reason">no roster tutor resembles &quot;Kevin Tran&quot;</td>
+        </tr></tbody>
+      </table>
+
+  
+      <h2>Auto-resolved matches <span class="count-pill">2</span></h2>
+      <p class="sub">Rows where the script made a judgment call instead of an exact name match.
+         These keep the affected tutors correctly <em>active</em> — review if you want to be sure.</p>
+      <table>
+        <thead><tr><th>Name in log</th><th>Resolved to</th><th>Confidence</th><th>Rows</th><th>How</th></tr></thead>
+        <tbody>
+        <tr>
+          <td class="name">J. Smith</td>
+          <td>→ John Smith <code>T004</code></td>
+          <td><span class="badge conf-review">Review</span></td>
+          <td class="num">2</td>
+          <td class="reason">&quot;J. Smith&quot; ambiguous among [John Smith, Jane Smith]; subject &quot;Physics&quot; -&gt; John Smith (T004)</td>
+        </tr>
+        <tr>
+          <td class="name">Sarah L.</td>
+          <td>→ Sarah Leung <code>T003</code></td>
+          <td><span class="badge conf-review">Review</span></td>
+          <td class="num">2</td>
+          <td class="reason">&quot;Sarah L.&quot; ambiguous among [Sarah Lee, Sarah Leung]; subject &quot;Biology&quot; -&gt; Sarah Leung (T003)</td>
+        </tr></tbody>
+      </table>
+
+  <h2>Active tutors</h2>
+  <details><summary>Show all 10 active tutors</summary>
+  <table style="margin-top:10px">
+    <thead><tr><th>ID</th><th>Name</th><th>Subject</th><th>Last seen</th>
+      <th>Days ago</th><th>Sessions</th><th>Confidence</th></tr></thead>
+    <tbody>
+        <tr>
+          <td><code>T005</code></td>
+          <td class="name">Jane Smith</td>
+          <td>English</td>
+          <td>2026-05-29</td>
+          <td class="num">0</td>
+          <td class="num">9</td>
+          <td><span class="badge conf-high">High</span></td>
+        </tr>
+        <tr>
+          <td><code>T011</code></td>
+          <td class="name">Marcus Brown</td>
+          <td>Maths</td>
+          <td>2026-05-29</td>
+          <td class="num">0</td>
+          <td class="num">12</td>
+          <td><span class="badge conf-high">High</span></td>
+        </tr>
+        <tr>
+          <td><code>T002</code></td>
+          <td class="name">Sarah Lee</td>
+          <td>Chemistry</td>
+          <td>2026-05-28</td>
+          <td class="num">1</td>
+          <td class="num">10</td>
+          <td><span class="badge conf-high">High</span></td>
+        </tr>
+        <tr>
+          <td><code>T003</code></td>
+          <td class="name">Sarah Leung</td>
+          <td>Biology</td>
+          <td>2026-05-28</td>
+          <td class="num">1</td>
+          <td class="num">7</td>
+          <td><span class="badge conf-review">Review</span></td>
+        </tr>
+        <tr>
+          <td><code>T009</code></td>
+          <td class="name">Liam Murphy</td>
+          <td>Chemistry</td>
+          <td>2026-05-28</td>
+          <td class="num">1</td>
+          <td class="num">8</td>
+          <td><span class="badge conf-high">High</span></td>
+        </tr>
+        <tr>
+          <td><code>T014</code></td>
+          <td class="name">Grace Park</td>
+          <td>Chemistry</td>
+          <td>2026-05-28</td>
+          <td class="num">1</td>
+          <td class="num">9</td>
+          <td><span class="badge conf-high">High</span></td>
+        </tr>
+        <tr>
+          <td><code>T004</code></td>
+          <td class="name">John Smith</td>
+          <td>Physics</td>
+          <td>2026-05-27</td>
+          <td class="num">2</td>
+          <td class="num">7</td>
+          <td><span class="badge conf-review">Review</span></td>
+        </tr>
+        <tr>
+          <td><code>T007</code></td>
+          <td class="name">Daniel O&#x27;Connor</td>
+          <td>English</td>
+          <td>2026-05-27</td>
+          <td class="num">2</td>
+          <td class="num">11</td>
+          <td><span class="badge conf-high">High</span></td>
+        </tr>
+        <tr>
+          <td><code>T010</code></td>
+          <td class="name">Sophie Nguyen</td>
+          <td>Biology</td>
+          <td>2026-05-26</td>
+          <td class="num">3</td>
+          <td class="num">7</td>
+          <td><span class="badge conf-high">High</span></td>
+        </tr>
+        <tr>
+          <td><code>T013</code></td>
+          <td class="name">Tom Wilson</td>
+          <td>Physics</td>
+          <td>2026-05-25</td>
+          <td class="num">4</td>
+          <td class="num">6</td>
+          <td><span class="badge conf-high">High</span></td>
+        </tr></tbody>
+  </table></details>
+  
+
+  <footer>
+    Generated by <code>quiet_tutors.py</code> · Python standard library only ·
+    "Quiet" = no session in 21+ days as of 2026-05-29.
+  </footer>
+</div></body></html>

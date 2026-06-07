@@ -1,0 +1,6 @@
+tutor_id,name,subject,phone,email,last_session_date,days_since_last_session,total_sessions,match_notes
+T015,Hannah Cohen,Biology,+61 419 553 802,hannah.cohen@gmail.com,2026-04-03,56,12,exact
+T001,Aarav Sharma,Maths,+61 412 003 118,aarav.sharma@gmail.com,2026-04-10,49,18,exact
+T012,Aisha Rahman,English,+61 423 615 708,aisha.rahman@gmail.com,2026-04-17,42,6,exact
+T006,Mei Tan,Maths,+61 431 660 942,mei.tan@gmail.com,2026-04-24,35,8,exact
+T008,Priya Nair,Physics,+61 415 002 776,priya.nair@gmail.com,2026-04-28,31,2,exact
