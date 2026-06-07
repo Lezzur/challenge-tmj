@@ -1,0 +1,4 @@
+raw_name,subject,tutor_id,roster_fingerprint,note
+J. Smith,Physics,T004,T001;T002;T003;T004;T005;T006;T007;T008;T009;T010;T011;T012;T013;T014;T015,Confirmed: J. Smith teaching Physics is John Smith
+Sarah L.,Biology,T003,T001;T002;T003;T004;T005;T006;T007;T008;T009;T010;T011;T012;T013;T014;T015,Confirmed: Sarah L. teaching Biology is Sarah Leung
+Kevin Tran,,IGNORE,T001;T002;T003;T004;T005;T006;T007;T008;T009;T010;T011;T012;T013;T014;T015,Ex-tutor; left March 2026 and not on the current roster

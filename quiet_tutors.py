@@ -15,6 +15,7 @@ Outputs:
     2. quiet_tutors.csv     — the check-in list, one row per quiet tutor, with tutor_id.
     3. review_unmatched.csv — session names that could NOT be confidently tied to a
                               tutor_id. These are surfaced on purpose, not dropped.
+    4. report.html          — a self-contained admin dashboard (no server, no deps).
 
 Dependencies: Python 3 standard library only (csv, datetime, difflib). No pip install.
 
@@ -27,6 +28,17 @@ Dependencies: Python 3 standard library only (csv, datetime, difflib). No pip in
   ambiguous between two roster tutors, the session's SUBJECT breaks the tie
   (the roster carries each tutor's subject). If it still can't be resolved to
   exactly one tutor, the name goes to the review list rather than being guessed.
+
+--- Learning loop: human edits become durable rules (aliases.csv) ---
+* When a human resolves a review entry, that decision is persisted in aliases.csv
+  and consulted BEFORE fuzzy matching on every later run. A confirmed mapping is
+  the highest confidence tier ("confirmed"); a "IGNORE" target suppresses a name
+  the human has ruled out (ex-tutor / typo) so it stops cluttering review.
+* Each alias records the roster it was confirmed against (roster_fingerprint).
+  If a NEWLY added tutor later collides with an alias's name, the alias is treated
+  as STALE and re-surfaced for one-time re-confirmation instead of routing blind.
+  The learning store yields to roster changes; it never overrides a genuine new
+  tutor. Aliases.csv is a deterministic, auditable lookup table — not a model.
 """
 
 from __future__ import annotations
@@ -52,6 +64,10 @@ QUIET_DAYS = 21  # three weeks
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SESSIONS = os.path.join(_HERE, "data", "sessions.csv")
 DEFAULT_TUTORS = os.path.join(_HERE, "data", "tutors.csv")
+DEFAULT_ALIASES = os.path.join(_HERE, "data", "aliases.csv")
+
+# Special alias target: a name a human has ruled out (ex-tutor, typo, not a real tutor).
+IGNORE_ID = "IGNORE"
 
 # Fuzzy thresholds. Names here are short, so we keep these strict to avoid
 # pairing genuinely different people (e.g. "Tran" must not become "Tan").
@@ -83,6 +99,20 @@ class TutorStats:
     last_session: date | None = None
     session_count: int = 0
     matched_via: set[str] = field(default_factory=set)  # how rows resolved to this tutor
+
+
+@dataclass
+class Alias:
+    """A human-confirmed mapping from a messy session name to a tutor_id (or IGNORE)."""
+    raw_name: str
+    subject: str            # "" = applies to any subject; else used to disambiguate
+    tutor_id: str           # a real tutor_id, or IGNORE_ID to suppress the name
+    fingerprint: set[str]   # tutor_ids that existed on the roster when this was confirmed
+    note: str = ""
+    norm: str = ""
+
+    def __post_init__(self):
+        self.norm = normalize(self.raw_name)
 
 
 # --------------------------------------------------------------------------- #
@@ -138,11 +168,82 @@ def token_compatible(session_tok: str, roster_tok: str) -> bool:
 @dataclass
 class MatchResult:
     tutor: Tutor | None
-    method: str          # "exact" | "fuzzy" | "fuzzy+subject" | "unmatched"
-    reason: str = ""     # human-readable explanation for the review log
+    # "confirmed" | "exact" | "fuzzy" | "fuzzy+subject" | "ignored" | "unmatched"
+    method: str
+    reason: str = ""     # human-readable explanation for the review/transparency log
 
 
-def match_session(raw_name: str, subject: str, roster: list[Tutor]) -> MatchResult:
+def _fuzzy_candidates(raw_name: str, roster: list[Tutor]) -> list[Tutor]:
+    """Roster tutors plausibly named by raw_name: exact normalized, else structured fuzzy."""
+    norm = normalize(raw_name)
+    exact = [t for t in roster if t.norm == norm]
+    if exact:
+        return exact
+    s_first, s_last = split_name(raw_name)
+    out = []
+    for t in roster:
+        given_ok = token_compatible(s_first, t.first) if (s_first or t.first) else True
+        surname_ok = token_compatible(s_last, t.last)
+        if given_ok and surname_ok:
+            out.append(t)
+    return out
+
+
+def lookup_alias(aliases: list[Alias], raw_name: str, subject: str) -> Alias | None:
+    """Find the alias for this name. A subject-specific alias beats a blank-subject one."""
+    norm = normalize(raw_name)
+    sub = (subject or "").strip().lower()
+    subject_hit = blank_hit = None
+    for a in aliases:
+        if a.norm != norm:
+            continue
+        if a.subject and a.subject.strip().lower() == sub:
+            subject_hit = a
+        elif not a.subject:
+            blank_hit = a
+    return subject_hit or blank_hit
+
+
+def alias_is_stale(alias: Alias, roster: list[Tutor]) -> tuple[bool, str]:
+    """
+    L Lawliet's guard: a confirmed alias must yield to roster changes, never override
+    a genuinely new tutor. An alias is stale if its target left the roster, OR if a
+    tutor added since it was confirmed now plausibly matches the alias's name.
+    """
+    roster_ids = {t.tutor_id for t in roster}
+    if alias.tutor_id != IGNORE_ID and alias.tutor_id not in roster_ids:
+        return True, f"target {alias.tutor_id} is no longer on the roster"
+    if alias.fingerprint:
+        new_ids = roster_ids - alias.fingerprint
+        if new_ids:
+            new_tutors = [t for t in roster if t.tutor_id in new_ids]
+            if _fuzzy_candidates(alias.raw_name, new_tutors):
+                return True, (f'newly added tutor(s) {", ".join(sorted(new_ids))} now '
+                              f'plausibly match "{alias.raw_name}" — needs re-confirmation')
+    return False, ""
+
+
+def match_session(raw_name: str, subject: str, roster: list[Tutor],
+                  aliases: list[Alias] | None = None) -> MatchResult:
+    # 0) Human-confirmed alias overrides matching — UNLESS it is stale vs the roster.
+    if aliases:
+        al = lookup_alias(aliases, raw_name, subject)
+        if al is not None:
+            stale, why = alias_is_stale(al, roster)
+            if not stale:
+                if al.tutor_id == IGNORE_ID:
+                    note = al.note or "not a tutor"
+                    return MatchResult(None, "ignored",
+                                       f'"{raw_name}" suppressed by a human: {note}')
+                tut = next((t for t in roster if t.tutor_id == al.tutor_id), None)
+                if tut is not None:
+                    extra = f" — {al.note}" if al.note else ""
+                    return MatchResult(tut, "confirmed",
+                                       f'"{raw_name}" → {tut.name} ({tut.tutor_id}), '
+                                       f'human-confirmed{extra}')
+            # Stale alias: fall through to normal matching so it re-enters review for
+            # one-time re-confirmation instead of routing to a now-ambiguous target.
+
     norm = normalize(raw_name)
 
     # 1) Exact normalized full-name match — the common case.
@@ -154,13 +255,7 @@ def match_session(raw_name: str, subject: str, roster: list[Tutor]) -> MatchResu
         cands = exact
     else:
         # 2) Structured fuzzy pass over (given, surname).
-        s_first, s_last = split_name(raw_name)
-        cands = []
-        for t in roster:
-            given_ok = token_compatible(s_first, t.first) if s_first or t.first else True
-            surname_ok = token_compatible(s_last, t.last)
-            if given_ok and surname_ok:
-                cands.append(t)
+        cands = _fuzzy_candidates(raw_name, roster)
 
     if not cands:
         return MatchResult(None, "unmatched", f'no roster tutor resembles "{raw_name}"')
@@ -203,6 +298,28 @@ def load_tutors(path: str) -> list[Tutor]:
     return tutors
 
 
+def load_aliases(path: str) -> list[Alias]:
+    """Load human-confirmed name overrides. Missing file = no aliases (this is fine)."""
+    if not path or not os.path.exists(path):
+        return []
+    out = []
+    with open(path, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            raw = (row.get("raw_name") or "").strip()
+            if not raw:
+                continue
+            fp = (row.get("roster_fingerprint") or "").strip()
+            fingerprint = {x.strip() for x in fp.split(";") if x.strip()}
+            out.append(Alias(
+                raw_name=raw,
+                subject=(row.get("subject") or "").strip(),
+                tutor_id=(row.get("tutor_id") or "").strip(),
+                fingerprint=fingerprint,
+                note=(row.get("note") or "").strip(),
+            ))
+    return out
+
+
 def parse_date(s: str) -> date | None:
     s = s.strip()
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
@@ -216,18 +333,30 @@ def parse_date(s: str) -> date | None:
 # --------------------------------------------------------------------------- #
 # Core
 # --------------------------------------------------------------------------- #
-def analyze(sessions_path: str, tutors_path: str):
+def analyze(sessions_path: str, tutors_path: str, aliases_path: str | None = None):
     roster = load_tutors(tutors_path)
+    aliases = load_aliases(aliases_path) if aliases_path else []
     stats = {t.tutor_id: TutorStats(t) for t in roster}
 
     # Aggregate unmatched/ambiguous raw names for the review list.
     unmatched: dict[str, dict] = defaultdict(lambda: {"count": 0, "reason": "", "subjects": set()})
+    # Names a human has explicitly suppressed via an alias (ex-tutor / typo).
+    ignored: dict[str, dict] = defaultdict(lambda: {"count": 0, "reason": "", "subjects": set()})
     bad_dates = 0
     # Transparency log: every row that needed a judgment call (not an exact match).
     decisions: dict[tuple, dict] = defaultdict(
         lambda: {"count": 0, "reason": "", "tutor_name": "", "tutor_id": "", "method": ""}
     )
     total_rows = 0
+
+    # Surface any alias that was disabled this run because the roster changed.
+    stale_warnings: list[str] = []
+    seen_stale: set[str] = set()
+    for al in aliases:
+        stale, why = alias_is_stale(al, roster)
+        if stale and al.raw_name not in seen_stale:
+            seen_stale.add(al.raw_name)
+            stale_warnings.append(f'"{al.raw_name}": {why}')
 
     with open(sessions_path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
@@ -239,7 +368,15 @@ def analyze(sessions_path: str, tutors_path: str):
                 bad_dates += 1
                 continue
 
-            res = match_session(raw_name, subject, roster)
+            res = match_session(raw_name, subject, roster, aliases)
+
+            if res.method == "ignored":
+                g = ignored[raw_name]
+                g["count"] += 1
+                g["reason"] = res.reason
+                g["subjects"].add(subject)
+                continue
+
             if res.tutor is None:
                 u = unmatched[raw_name]
                 u["count"] += 1
@@ -262,7 +399,7 @@ def analyze(sessions_path: str, tutors_path: str):
                 dec["tutor_id"] = res.tutor.tutor_id
                 dec["method"] = res.method
 
-    return roster, stats, unmatched, bad_dates, decisions, total_rows
+    return roster, stats, unmatched, bad_dates, decisions, total_rows, ignored, stale_warnings
 
 
 def days_since(d: date | None) -> int | None:
@@ -304,7 +441,9 @@ def write_review_csv(path: str, unmatched: dict[str, dict]):
             w.writerow([name, info["count"], "; ".join(sorted(info["subjects"])), info["reason"]])
 
 
-def print_report(roster, stats, unmatched, bad_dates, outdir):
+def print_report(roster, stats, unmatched, bad_dates, outdir, ignored=None, stale_warnings=None):
+    ignored = ignored or {}
+    stale_warnings = stale_warnings or []
     quiet = sorted(
         (st for st in stats.values() if is_quiet(st)),
         key=lambda s: (days_since(s.last_session) is not None, days_since(s.last_session) or 10**9),
@@ -349,6 +488,18 @@ def print_report(roster, stats, unmatched, bad_dates, outdir):
         print("  These are surfaced on purpose. They are NOT in the quiet list above and")
         print("  were NOT silently dropped — decide who they are before acting.")
 
+    if ignored:
+        print()
+        print("  Suppressed by a human (alias rules) — not a tutor / ex-tutor / typo:")
+        for name, info in sorted(ignored.items()):
+            print(f"    · \"{name}\"  ({info['count']} session(s)) — {info['reason']}")
+
+    if stale_warnings:
+        print()
+        print("  ⚠ Alias rules disabled this run (roster changed — re-confirm these):")
+        for w in stale_warnings:
+            print(f"    · {w}")
+
     if bad_dates:
         print(f"\n  Note: {bad_dates} session row(s) had an unparseable date and were skipped.")
 
@@ -364,6 +515,7 @@ def print_report(roster, stats, unmatched, bad_dates, outdir):
 # --------------------------------------------------------------------------- #
 # How each match method maps to an admin-facing confidence level.
 CONFIDENCE = {
+    "confirmed": ("Confirmed", "A human confirmed this name maps to this tutor.", "conf-confirmed"),
     "exact": ("High", "Name matched the roster exactly.", "conf-high"),
     "fuzzy": ("Medium", "Matched by name shape (e.g. an initial); only one candidate.", "conf-med"),
     "fuzzy+subject": ("Review", "Name was ambiguous; resolved using the session subject.", "conf-review"),
@@ -372,7 +524,7 @@ CONFIDENCE = {
 
 def tutor_confidence(methods: set[str]) -> tuple[str, str]:
     """Overall confidence for a tutor = the weakest method any of their rows used."""
-    order = ["fuzzy+subject", "fuzzy", "exact"]  # weakest first
+    order = ["fuzzy+subject", "fuzzy", "exact", "confirmed"]  # weakest first
     for m in order:
         if m in methods:
             label, _desc, cls = CONFIDENCE[m]
@@ -390,7 +542,10 @@ def _sev_class(days: int | None) -> str:
     return "sev-low"
 
 
-def write_html_report(path, roster, stats, unmatched, bad_dates, decisions, total_rows, sources):
+def write_html_report(path, roster, stats, unmatched, bad_dates, decisions, total_rows, sources,
+                      ignored=None, stale_warnings=None):
+    ignored = ignored or {}
+    stale_warnings = stale_warnings or []
     e = html.escape
     quiet = sorted(
         (st for st in stats.values() if is_quiet(st)),
@@ -402,7 +557,8 @@ def write_html_report(path, roster, stats, unmatched, bad_dates, decisions, tota
         key=lambda s: days_since(s.last_session) or 0,
     )
     n_review = sum(v["count"] for v in unmatched.values())
-    matched_rows = total_rows - n_review - bad_dates
+    n_ignored = sum(v["count"] for v in ignored.values())
+    matched_rows = total_rows - n_review - bad_dates - n_ignored
     generated = _dt.now().strftime("%Y-%m-%d %H:%M")
 
     def badge(label, cls):
@@ -447,6 +603,36 @@ def write_html_report(path, roster, stats, unmatched, bad_dates, decisions, tota
         <thead><tr><th>Name in log</th><th>Sessions</th><th>Subject(s)</th><th>Why not matched</th></tr></thead>
         <tbody>{review_rows}</tbody>
       </table>""" if unmatched else '<h2>⚠ Needs a human <span class="count-pill ok">0</span></h2><p class="sub">Every session name resolved to a tutor. Nothing waiting on a human.</p>'
+
+    # --- Suppressed (human ruled these out via an alias) ---
+    sup_section = ""
+    if ignored:
+        sup_rows = ""
+        for name, info in sorted(ignored.items()):
+            sup_rows += f"""
+        <tr>
+          <td class="name">{e(name)}</td>
+          <td class="num">{info['count']}</td>
+          <td class="reason">{e(info['reason'])}</td>
+        </tr>"""
+        sup_section = f"""
+      <h2>Suppressed by a human <span class="count-pill">{len(ignored)}</span></h2>
+      <p class="sub">Names a human ruled out (ex-tutor, typo, not a real tutor) via an alias rule.
+         Counted, not silently dropped — so the conservation check still balances.</p>
+      <table>
+        <thead><tr><th>Name in log</th><th>Sessions</th><th>Why suppressed</th></tr></thead>
+        <tbody>{sup_rows}</tbody>
+      </table>"""
+
+    # --- Stale alias warnings (roster changed; rule re-surfaced) ---
+    stale_section = ""
+    if stale_warnings:
+        items = "".join(f"<li>{e(w)}</li>" for w in stale_warnings)
+        stale_section = f"""
+      <h2 class="warnhead">⚠ Alias rules disabled this run <span class="count-pill warn">{len(stale_warnings)}</span></h2>
+      <p class="sub warn">A confirmed alias yields to roster changes — it never overrides a genuinely
+         new tutor. These were disabled and re-routed to review for one-time re-confirmation.</p>
+      <ul class="warnlist">{items}</ul>"""
 
     # --- Auto-decisions (transparency log) ---
     dec_rows = ""
@@ -529,6 +715,7 @@ def write_html_report(path, roster, stats, unmatched, bad_dates, decisions, tota
   a {{ color:var(--accent); text-decoration:none; }}
   a:hover {{ text-decoration:underline; }}
   .badge {{ display:inline-block; padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:600; }}
+  .conf-confirmed {{ background:rgba(57,208,216,.16); color:#39d0d8; }}
   .conf-high {{ background:rgba(63,185,80,.15); color:#56d364; }}
   .conf-med {{ background:rgba(91,140,255,.15); color:#79a0ff; }}
   .conf-review {{ background:rgba(210,153,34,.18); color:#e3b341; }}
@@ -541,6 +728,10 @@ def write_html_report(path, roster, stats, unmatched, bad_dates, decisions, tota
   .count-pill {{ background:#222; color:var(--mut); border-radius:999px; padding:1px 9px;
                  font-size:12px; font-weight:600; vertical-align:middle; }}
   .count-pill.ok {{ background:rgba(63,185,80,.15); color:#56d364; }}
+  .count-pill.warn {{ background:rgba(210,153,34,.18); color:#e3b341; }}
+  .warnhead {{ color:#e3b341; }}
+  .warnlist {{ margin:6px 0 0; padding-left:20px; color:#e3b341; font-size:13px; }}
+  .warnlist li {{ margin:3px 0; }}
   details {{ margin-top:8px; }}
   summary {{ cursor:pointer; color:var(--accent); font-size:14px; }}
   .legend {{ color:var(--mut); font-size:12.5px; margin:10px 0 0; }}
@@ -563,7 +754,8 @@ def write_html_report(path, roster, stats, unmatched, bad_dates, decisions, tota
     <div class="card quiet"><div class="n">{len(quiet)}</div><div class="l">Quiet (need check-in)</div></div>
     <div class="card review"><div class="n">{len(unmatched)}</div><div class="l">Names need a human</div></div>
   </div>
-  <p class="legend">Rows processed: {total_rows} &nbsp;=&nbsp; {matched_rows} matched + {n_review} review + {bad_dates} bad dates &nbsp;(conservation check: no silent drops).</p>
+  <p class="legend">Rows processed: {total_rows} &nbsp;=&nbsp; {matched_rows} matched + {n_review} review + {n_ignored} suppressed + {bad_dates} bad dates &nbsp;(conservation check: no silent drops).</p>
+  {stale_section}
 
   <h2>Quiet tutors <span class="count-pill">{len(quiet)}</span></h2>
   <p class="sub">No session in {QUIET_DAYS}+ days, worst first. Every tutor carries their <code>tutor_id</code>.</p>
@@ -575,12 +767,15 @@ def write_html_report(path, roster, stats, unmatched, bad_dates, decisions, tota
     <tbody>{quiet_rows if quiet_rows else '<tr><td colspan="10">No quiet tutors. 🎉</td></tr>'}</tbody>
   </table>
   <p class="legend">
-    Confidence: {badge('High','conf-high')} exact name match &nbsp;
+    Confidence: {badge('Confirmed','conf-confirmed')} human-confirmed alias &nbsp;
+    {badge('High','conf-high')} exact name match &nbsp;
     {badge('Medium','conf-med')} matched by name shape &nbsp;
     {badge('Review','conf-review')} ambiguous, resolved via subject.
   </p>
 
   {review_section}
+
+  {sup_section}
 
   {dec_section}
 
@@ -607,6 +802,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Find quiet TMJ tutors (no session in 3+ weeks).")
     ap.add_argument("--sessions", default=DEFAULT_SESSIONS)
     ap.add_argument("--tutors", default=DEFAULT_TUTORS)
+    ap.add_argument("--aliases", default=DEFAULT_ALIASES,
+                    help="human-confirmed name overrides (optional; missing file = none)")
     ap.add_argument("--out", default=".", help="output directory for CSVs + HTML report")
     args = ap.parse_args(argv)
 
@@ -616,14 +813,16 @@ def main(argv=None):
             return 2
 
     os.makedirs(args.out, exist_ok=True)
-    roster, stats, unmatched, bad_dates, decisions, total_rows = analyze(args.sessions, args.tutors)
-    quiet = print_report(roster, stats, unmatched, bad_dates, args.out)
+    (roster, stats, unmatched, bad_dates, decisions,
+     total_rows, ignored, stale_warnings) = analyze(args.sessions, args.tutors, args.aliases)
+    quiet = print_report(roster, stats, unmatched, bad_dates, args.out, ignored, stale_warnings)
 
     write_quiet_csv(os.path.join(args.out, "quiet_tutors.csv"), quiet)
     write_review_csv(os.path.join(args.out, "review_unmatched.csv"), unmatched)
     html_path = os.path.join(args.out, "report.html")
     write_html_report(html_path, roster, stats, unmatched, bad_dates,
-                      decisions, total_rows, (args.sessions, args.tutors))
+                      decisions, total_rows, (args.sessions, args.tutors),
+                      ignored, stale_warnings)
     print(f"  Written: {html_path}")
     return 0
 

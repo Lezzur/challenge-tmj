@@ -38,6 +38,7 @@
   a { color:var(--accent); text-decoration:none; }
   a:hover { text-decoration:underline; }
   .badge { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:600; }
+  .conf-confirmed { background:rgba(57,208,216,.16); color:#39d0d8; }
   .conf-high { background:rgba(63,185,80,.15); color:#56d364; }
   .conf-med { background:rgba(91,140,255,.15); color:#79a0ff; }
   .conf-review { background:rgba(210,153,34,.18); color:#e3b341; }
@@ -50,6 +51,10 @@
   .count-pill { background:#222; color:var(--mut); border-radius:999px; padding:1px 9px;
                  font-size:12px; font-weight:600; vertical-align:middle; }
   .count-pill.ok { background:rgba(63,185,80,.15); color:#56d364; }
+  .count-pill.warn { background:rgba(210,153,34,.18); color:#e3b341; }
+  .warnhead { color:#e3b341; }
+  .warnlist { margin:6px 0 0; padding-left:20px; color:#e3b341; font-size:13px; }
+  .warnlist li { margin:3px 0; }
   details { margin-top:8px; }
   summary { cursor:pointer; color:var(--accent); font-size:14px; }
   .legend { color:var(--mut); font-size:12.5px; margin:10px 0 0; }
@@ -61,7 +66,7 @@
     <div class="meta">
       Today: <code>Friday 29 May 2026</code> ·
       Quiet threshold: <code>≥ 21 days</code> ·
-      Generated: <code>2026-06-07 05:30</code><br>
+      Generated: <code>2026-06-07 05:43</code><br>
       Sources: <code>sessions.csv</code> + <code>tutors.csv</code>
     </div>
   </header>
@@ -72,7 +77,8 @@
     <div class="card quiet"><div class="n">5</div><div class="l">Quiet (need check-in)</div></div>
     <div class="card review"><div class="n">1</div><div class="l">Names need a human</div></div>
   </div>
-  <p class="legend">Rows processed: 135 &nbsp;=&nbsp; 132 matched + 3 review + 0 bad dates &nbsp;(conservation check: no silent drops).</p>
+  <p class="legend">Rows processed: 135 &nbsp;=&nbsp; 132 matched + 3 review + 0 suppressed + 0 bad dates &nbsp;(conservation check: no silent drops).</p>
+  
 
   <h2>Quiet tutors <span class="count-pill">5</span></h2>
   <p class="sub">No session in 21+ days, worst first. Every tutor carries their <code>tutor_id</code>.</p>
@@ -144,7 +150,8 @@
         </tr></tbody>
   </table>
   <p class="legend">
-    Confidence: <span class="badge conf-high">High</span> exact name match &nbsp;
+    Confidence: <span class="badge conf-confirmed">Confirmed</span> human-confirmed alias &nbsp;
+    <span class="badge conf-high">High</span> exact name match &nbsp;
     <span class="badge conf-med">Medium</span> matched by name shape &nbsp;
     <span class="badge conf-review">Review</span> ambiguous, resolved via subject.
   </p>
@@ -163,6 +170,8 @@
           <td class="reason">no roster tutor resembles &quot;Kevin Tran&quot;</td>
         </tr></tbody>
       </table>
+
+  
 
   
       <h2>Auto-resolved matches <span class="count-pill">2</span></h2>
